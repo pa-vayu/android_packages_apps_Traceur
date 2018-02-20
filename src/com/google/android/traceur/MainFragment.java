@@ -100,8 +100,7 @@ public class MainFragment extends PreferenceFragment {
                 new Preference.OnPreferenceClickListener() {
                     @Override
                     public boolean onPreferenceClick(Preference preference) {
-                        AtraceUtils.atraceDumpAndSendInBackground(getContext(),
-                                Receiver.getActiveTags(getContext(), mPrefs, true));
+                        AtraceUtils.atraceDumpAndSend(getContext());
                         return true;
                     }
                 });
@@ -111,7 +110,8 @@ public class MainFragment extends PreferenceFragment {
                     @Override
                     public boolean onPreferenceClick(Preference preference) {
                         refreshTags(/* restoreDefaultTags =*/ true);
-                        Toast.makeText(getContext(), "Default tags restored",
+                        Toast.makeText(getContext(),
+                            getContext().getString(R.string.default_categories_restored),
                                 Toast.LENGTH_SHORT).show();
                         return true;
                     }
@@ -197,7 +197,7 @@ public class MainFragment extends PreferenceFragment {
             mTags.setEntries(entries.toArray(new String[0]));
             mTags.setEntryValues(values.toArray(new String[0]));
             if (restoreDefaultTags || !mPrefs.contains(getContext().getString(R.string.pref_key_tags))) {
-                mTags.setValues(Receiver.ATRACE_TAGS);
+                mTags.setValues(Receiver.getDefaultTagList());
             }
         } finally {
             mRefreshing = false;

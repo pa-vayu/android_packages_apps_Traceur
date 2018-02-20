@@ -40,14 +40,17 @@ public class Receiver extends BroadcastReceiver {
     public static final String OPEN_ACTION = "com.android.traceur.OPEN";
     public static final String FORCE_UPDATE_ACTION = "com.android.traceur.FORCE_UPDATE";
 
-    private static final String TILE_ACTION = "com.android.traceur.TILE";
-
-    public static final String QS_TILE_SETTING = "sysui_qs_tiles";
-
-    public static final Set<String> ATRACE_TAGS = Sets.newArraySet(
+    private static final Set<String> ATRACE_TAGS = Sets.newArraySet(
             "am", "binder_driver", "camera", "dalvik", "freq", "gfx", "hal",
             "idle", "input", "irq", "res", "sched", "sync", "view", "wm",
             "workq");
+
+    /* The user list doesn't include workq, irq, or sync, because the user builds don't have
+     * permissions for them. */
+    private static final Set<String> ATRACE_TAGS_USER = Sets.newArraySet(
+            "am", "binder_driver", "camera", "dalvik", "freq", "gfx", "hal",
+            "idle", "input", "res", "sched", "view", "wm");
+
     public static final int BUFFER_SIZE_KB = 16384;
 
     private static final String TAG = "Traceur";
@@ -64,8 +67,7 @@ public class Receiver extends BroadcastReceiver {
         } else if (DUMP_ACTION.equals(intent.getAction())) {
             context.sendBroadcast(new Intent(Intent.ACTION_CLOSE_SYSTEM_DIALOGS));
             if (AtraceUtils.isTracingOn()) {
-                AtraceUtils.atraceDumpAndSendInBackground(context,
-                        getActiveTags(context, prefs, true));
+                AtraceUtils.atraceDumpAndSend(context);
             } else {
                 context.startActivity(new Intent(context, MainActivity.class)
                         .setFlags(Intent.FLAG_ACTIVITY_NEW_TASK));
@@ -101,9 +103,8 @@ public class Receiver extends BroadcastReceiver {
         NotificationManager nm = context.getSystemService(NotificationManager.class);
         Intent sendIntent = new Intent(context, MainActivity.class);
 
-        String title = "Tracing permissions required.";
-        String msg = "Some tracing tags are not available: " + getActiveUnavailableTags(context, prefs)
-                + "\nThis should not happen! Please file a bug on Traceur.";
+        String title = context.getString(R.string.tracing_categories_unavailable);
+        String msg = getActiveUnavailableTags(context, prefs);
         final Notification.Builder builder = new Notification.Builder(context)
                 .setStyle(new Notification.BigTextStyle().bigText(
                         msg))
@@ -129,7 +130,7 @@ public class Receiver extends BroadcastReceiver {
 
     public static String getActiveTags(Context context, SharedPreferences prefs, boolean onlyAvailable) {
         Set<String> tags = prefs.getStringSet(context.getString(R.string.pref_key_tags),
-                ATRACE_TAGS);
+                getDefaultTagList());
         StringBuilder sb = new StringBuilder(10 * tags.size());
         TreeMap<String, String> available =
                 onlyAvailable ? AtraceUtils.atraceListCategories() : null;
@@ -148,7 +149,7 @@ public class Receiver extends BroadcastReceiver {
 
     public static String getActiveUnavailableTags(Context context, SharedPreferences prefs) {
         Set<String> tags = prefs.getStringSet(context.getString(R.string.pref_key_tags),
-                ATRACE_TAGS);
+                getDefaultTagList());
         StringBuilder sb = new StringBuilder(10 * tags.size());
         TreeMap<String, String> available = AtraceUtils.atraceListCategories();
 
@@ -162,5 +163,9 @@ public class Receiver extends BroadcastReceiver {
         String s = sb.toString();
         Log.v(TAG, "getActiveUnavailableTags() = \"" + s + "\"");
         return s;
+    }
+
+    public static Set<String> getDefaultTagList() {
+        return Build.TYPE.equals("user") ? ATRACE_TAGS_USER : ATRACE_TAGS;
     }
 }
