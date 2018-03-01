@@ -74,14 +74,14 @@ public class TraceurAppTests {
         assertNotNull("Record trace switch not found.",
                 mDevice.wait(Until.findObject(By.text("Record trace")),
                 TIMEOUT));
-        assertNotNull("Save and share trace element not found.",
-                mDevice.wait(Until.findObject(By.text("Save and share trace")),
-                TIMEOUT));
         assertNotNull("Categories element not found.",
                 mDevice.wait(Until.findObject(By.text("Categories")),
                 TIMEOUT));
         assertNotNull("Restore default categories element not found.",
                 mDevice.wait(Until.findObject(By.text("Restore default categories")),
+                TIMEOUT));
+        assertNotNull("Clear saved traces element not found.",
+                mDevice.wait(Until.findObject(By.text("Clear saved traces")),
                 TIMEOUT));
         assertNotNull("Show Quick Settings tile switch not found.",
                 mDevice.wait(Until.findObject(By.text("Show Quick Settings tile")),
@@ -100,8 +100,6 @@ public class TraceurAppTests {
 
         mDevice.findObject(By.text("Record trace")).click();
         mDevice.findObject(By.text("Record trace")).click();
-
-        mDevice.findObject(By.text("Save and share trace")).click();
 
         mDevice.openNotification();
         mDevice.wait(Until.hasObject(By.text("Tap to share your trace")), TIMEOUT);

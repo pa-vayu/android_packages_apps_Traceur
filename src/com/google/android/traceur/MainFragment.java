@@ -19,11 +19,10 @@ package com.android.traceur;
 import android.annotation.Nullable;
 import android.app.AlertDialog;
 import android.content.BroadcastReceiver;
-import android.content.ComponentName;
 import android.content.Context;
+import android.content.DialogInterface;
 import android.content.Intent;
 import android.content.IntentFilter;
-import android.content.pm.PackageManager;
 import android.content.SharedPreferences;
 import android.os.Build;
 import android.os.Bundle;
@@ -33,8 +32,14 @@ import android.support.v14.preference.PreferenceFragment;
 import android.support.v7.preference.PreferenceManager;
 import android.support.v7.preference.PreferenceScreen;
 import android.support.v14.preference.SwitchPreference;
+import android.view.LayoutInflater;
 import android.view.View;
+import android.view.ViewGroup;
+import android.view.Menu;
+import android.view.MenuInflater;
 import android.widget.Toast;
+
+import com.android.settingslib.HelpUtils;
 
 import java.util.ArrayList;
 import java.util.Map.Entry;
@@ -66,10 +71,10 @@ public class MainFragment extends PreferenceFragment {
                 getActivity().getApplicationContext());
 
         mTracingOn = (SwitchPreference) findPreference(getActivity().getString(R.string.pref_key_tracing_on));
-        mTracingOn.setOnPreferenceChangeListener(new Preference.OnPreferenceChangeListener() {
+        mTracingOn.setOnPreferenceClickListener(new Preference.OnPreferenceClickListener() {
             @Override
-            public boolean onPreferenceChange(Preference preference, Object newValue) {
-              refresh();
+            public boolean onPreferenceClick(Preference preference) {
+              Receiver.updateTracing(getContext());
               return true;
             }
         });
@@ -96,20 +101,11 @@ public class MainFragment extends PreferenceFragment {
             }
         });
 
-        findPreference("dump").setOnPreferenceClickListener(
-                new Preference.OnPreferenceClickListener() {
-                    @Override
-                    public boolean onPreferenceClick(Preference preference) {
-                        AtraceUtils.atraceDumpAndSend(getContext());
-                        return true;
-                    }
-                });
-
         findPreference("restore_default_tags").setOnPreferenceClickListener(
                 new Preference.OnPreferenceClickListener() {
                     @Override
                     public boolean onPreferenceClick(Preference preference) {
-                        refreshTags(/* restoreDefaultTags =*/ true);
+                        refresh(/* restoreDefaultTags =*/ true);
                         Toast.makeText(getContext(),
                             getContext().getString(R.string.default_categories_restored),
                                 Toast.LENGTH_SHORT).show();
@@ -118,41 +114,59 @@ public class MainFragment extends PreferenceFragment {
                 });
 
         findPreference(getString(R.string.pref_key_quick_setting))
-            .setOnPreferenceChangeListener(
-                new Preference.OnPreferenceChangeListener() {
+            .setOnPreferenceClickListener(
+                new Preference.OnPreferenceClickListener() {
                     @Override
-                    public boolean onPreferenceChange(Preference preference, Object newValue) {
-                        ComponentName name = new ComponentName(getContext(), QsService.class);
-                        getContext().getPackageManager().setComponentEnabledSetting(name,
-                            (Boolean) newValue
-                                ? PackageManager.COMPONENT_ENABLED_STATE_ENABLED
-                                : PackageManager.COMPONENT_ENABLED_STATE_DISABLED,
-                            PackageManager.DONT_KILL_APP);
+                    public boolean onPreferenceClick(Preference preference) {
+                        Receiver.updateQuickswitch(getContext());
                         return true;
                     }
                 });
 
+        findPreference("clear_saved_traces").setOnPreferenceClickListener(
+                new Preference.OnPreferenceClickListener() {
+                    @Override
+                    public boolean onPreferenceClick(Preference preference) {
+                        new AlertDialog.Builder(getContext())
+                            .setMessage(R.string.clear_saved_traces_confirm)
+                            .setPositiveButton(android.R.string.yes,
+                                new DialogInterface.OnClickListener() {
+                                    public void onClick(DialogInterface dialog, int which) {
+                                        AtraceUtils.clearSavedTraces();
+                                    }
+                                })
+                            .setNegativeButton(android.R.string.no,
+                                new DialogInterface.OnClickListener() {
+                                    public void onClick(DialogInterface dialog, int which) {
+                                        dialog.dismiss();
+                                    }
+                                })
+                            .create()
+                            .show();
+                        return true;
+                    }
+                });
 
-        refreshTags();
         mRefreshReceiver = new BroadcastReceiver() {
             @Override
             public void onReceive(Context context, Intent intent) {
-                refreshTags();
+                refresh();
 
             }
         };
     }
 
     @Override
-    public void onViewCreated(View view, Bundle savedInstanceState) {
-        super.onViewCreated(view, savedInstanceState);
-        refresh();
+    public View onCreateView(LayoutInflater inflater, ViewGroup container, Bundle savedInstanceState) {
+        setHasOptionsMenu(true);
+        return super.onCreateView(inflater, container, savedInstanceState);
     }
 
     @Override
     public void onResume() {
         super.onResume();
         getActivity().registerReceiver(mRefreshReceiver, new IntentFilter(ACTION_REFRESH_TAGS));
+        Receiver.updateTracing(getContext());
     }
 
     @Override
@@ -172,18 +186,26 @@ public class MainFragment extends PreferenceFragment {
         addPreferencesFromResource(R.xml.main);
     }
 
+    @Override
+    public void onCreateOptionsMenu(Menu menu, MenuInflater inflater) {
+        HelpUtils.prepareHelpMenuItem(getActivity(), menu, R.string.help_url,
+            this.getClass().getName());
+    }
+
     private void refresh() {
-        Receiver.updateTracing(getContext(), false);
+        refresh(/* restoreDefaultTags =*/ false);
     }
 
-    private void refreshTags() {
-        refreshTags(/* restoreDefaultTags =*/ false);
-    }
-
-    private void refreshTags(boolean restoreDefaultTags) {
+    /*
+     * Refresh the preferences UI to make sure it reflects the current state of the preferences and
+     * system.
+     */
+    private void refresh(boolean restoreDefaultTags) {
+        // Make sure the Record Trace toggle matches the preference value.
         mTracingOn.setChecked(mTracingOn.getPreferenceManager().getSharedPreferences().getBoolean(
                 mTracingOn.getKey(), false));
 
+        // Update category list to match the categories available on the system from atrace.
         Set<Entry<String, String>> availableTags = AtraceUtils.atraceListCategories().entrySet();
         ArrayList<String> entries = new ArrayList<String>(availableTags.size());
         ArrayList<String> values = new ArrayList<String>(availableTags.size());
