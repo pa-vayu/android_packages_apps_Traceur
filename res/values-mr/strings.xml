@@ -2,9 +2,23 @@
 <resources xmlns:android="http://schemas.android.com/apk/res/android"
     xmlns:xliff="urn:oasis:names:tc:xliff:document:1.2">
     <string name="system_tracing" msgid="4719188511746319848">"सिस्टम माग काढत आहे"</string>
-    <string name="start_tracing" msgid="4801253617978008078">"ट्रेस करणे सुरू करा"</string>
-    <string name="share_trace" msgid="5801019739087978595">"ट्रेस शेअर करा"</string>
-    <string name="active_tags" msgid="7440962492059900756">"अ‍ॅक्टिव्ह टॅग"</string>
-    <string name="restore_default_tags" msgid="4188812334929801036">"डीफॉल्ट टॅग रिस्‍‍‍‍‍टोअर करा"</string>
+    <string name="record_trace" msgid="6416875085186661845">"रेकॉर्डचा माग"</string>
+    <string name="categories" msgid="2280163673538611008">"वर्गवार्‍या"</string>
+    <string name="restore_default_categories" msgid="5090536794637169521">"डिफॉल्ट वर्गवार्‍या रिस्‍‍‍‍‍टोअर करा"</string>
+    <string name="default_categories_restored" msgid="6861683793680564181">"डिफॉल्ट वर्गवार्‍या रिस्‍‍‍‍‍टोअर केल्या"</string>
     <string name="show_quick_settings_tile" msgid="4971147332635291585">"झटपट सेटिंग्ज टाइल दाखवा"</string>
+    <string name="saving_trace" msgid="1468692734770800541">"माग सेव्ह करत आहे"</string>
+    <string name="trace_saved" msgid="5869970594780992309">"माग सेव्ह केला"</string>
+    <string name="tap_to_share" msgid="6766732404489536899">"तुमचा माग शेअर करण्यासाठी टॅप करा"</string>
+    <!-- no translation found for stop_tracing (8916938308534164152) -->
+    <skip />
+    <string name="tracing_categories_unavailable" msgid="5609076391417077752">"माग काढण्याच्या काही वर्गवार्‍या अनुपलब्ध आहेत:"</string>
+    <!-- no translation found for trace_is_being_recorded (5947378146009337469) -->
+    <skip />
+    <!-- no translation found for tap_to_stop_tracing (6533282719573871806) -->
+    <skip />
+    <!-- no translation found for clear_saved_traces (4809195654452260944) -->
+    <skip />
+    <!-- no translation found for clear_saved_traces_confirm (7146599350128726240) -->
+    <skip />
 </resources>

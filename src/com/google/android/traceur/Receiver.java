@@ -22,10 +22,15 @@ import android.app.Notification;
 import android.app.NotificationManager;
 import android.app.PendingIntent;
 import android.content.BroadcastReceiver;
+import android.content.ComponentName;
 import android.content.Context;
 import android.content.Intent;
 import android.content.SharedPreferences;
+import android.content.pm.PackageManager;
+import android.database.ContentObserver;
+import android.net.Uri;
 import android.os.Build;
+import android.os.Handler;
 import android.preference.PreferenceManager;
 import android.provider.Settings;
 import android.text.TextUtils;
@@ -36,40 +41,38 @@ import java.util.TreeMap;
 
 public class Receiver extends BroadcastReceiver {
 
-    public static final String DUMP_ACTION = "com.android.traceur.DUMP";
+    public static final String STOP_ACTION = "com.android.traceur.STOP";
     public static final String OPEN_ACTION = "com.android.traceur.OPEN";
-    public static final String FORCE_UPDATE_ACTION = "com.android.traceur.FORCE_UPDATE";
 
-    private static final String TILE_ACTION = "com.android.traceur.TILE";
-
-    public static final String QS_TILE_SETTING = "sysui_qs_tiles";
-
-    public static final Set<String> ATRACE_TAGS = Sets.newArraySet(
+    private static final Set<String> ATRACE_TAGS = Sets.newArraySet(
             "am", "binder_driver", "camera", "dalvik", "freq", "gfx", "hal",
             "idle", "input", "irq", "res", "sched", "sync", "view", "wm",
             "workq");
+
+    /* The user list doesn't include workq, irq, or sync, because the user builds don't have
+     * permissions for them. */
+    private static final Set<String> ATRACE_TAGS_USER = Sets.newArraySet(
+            "am", "binder_driver", "camera", "dalvik", "freq", "gfx", "hal",
+            "idle", "input", "res", "sched", "view", "wm");
+
     public static final int BUFFER_SIZE_KB = 16384;
 
     private static final String TAG = "Traceur";
+
+    private static final int CATEGORY_NOTIFICATION = 0;
+    private static final int TRACE_NOTIFICATION = 1;
 
     @Override
     public void onReceive(Context context, Intent intent) {
         SharedPreferences prefs = PreferenceManager.getDefaultSharedPreferences(context);
 
         if (Intent.ACTION_BOOT_COMPLETED.equals(intent.getAction())) {
-            updateTracing(context, false);
-            QsService.requestListeningState(context);
-        } else if (FORCE_UPDATE_ACTION.equals(intent.getAction())) {
-            updateTracing(context, true);
-        } else if (DUMP_ACTION.equals(intent.getAction())) {
-            context.sendBroadcast(new Intent(Intent.ACTION_CLOSE_SYSTEM_DIALOGS));
-            if (AtraceUtils.isTracingOn()) {
-                AtraceUtils.atraceDumpAndSendInBackground(context,
-                        getActiveTags(context, prefs, true));
-            } else {
-                context.startActivity(new Intent(context, MainActivity.class)
-                        .setFlags(Intent.FLAG_ACTIVITY_NEW_TASK));
-            }
+            setupDeveloperOptionsWatcher(context);
+            updateTracing(context);
+            updateQuickswitch(context);
+        } else if (STOP_ACTION.equals(intent.getAction())) {
+            prefs.edit().putBoolean(context.getString(R.string.pref_key_tracing_on), false).apply();
+            updateTracing(context);
         } else if (OPEN_ACTION.equals(intent.getAction())) {
             context.sendBroadcast(new Intent(Intent.ACTION_CLOSE_SYSTEM_DIALOGS));
             context.startActivity(new Intent(context, MainActivity.class)
@@ -77,33 +80,108 @@ public class Receiver extends BroadcastReceiver {
         }
     }
 
-    public static void updateTracing(Context context, boolean force) {
+    /*
+     * Updates the current tracing state based on the current state of preferences.
+     */
+    public static void updateTracing(Context context) {
         SharedPreferences prefs = PreferenceManager.getDefaultSharedPreferences(context);
-        if (prefs.getBoolean(context.getString(R.string.pref_key_tracing_on), false) != AtraceUtils.isTracingOn() || force) {
-            if (prefs.getBoolean(context.getString(R.string.pref_key_tracing_on), false)) {
+        boolean prefsTracingOn =
+                prefs.getBoolean(context.getString(R.string.pref_key_tracing_on), false);
+
+        if (prefsTracingOn != AtraceUtils.isTracingOn()) {
+            if (prefsTracingOn) {
+                // Show notification if the tags in preferences are not all actually available.
                 String activeAvailableTags = getActiveTags(context, prefs, true);
-                if (!TextUtils.equals(activeAvailableTags, getActiveTags(context, prefs, false))) {
-                    postRootNotification(context, prefs);
-                } else {
-                    cancelRootNotification(context);
+                String activeTags = getActiveTags(context, prefs, false);
+                if (!TextUtils.equals(activeAvailableTags, activeTags)) {
+                    postCategoryNotification(context, prefs);
                 }
 
                 AtraceUtils.atraceStart(activeAvailableTags, BUFFER_SIZE_KB);
+                postTracingNotification(context, prefs);
             } else {
-                AtraceUtils.atraceStop();
-                cancelRootNotification(context);
+                AtraceUtils.atraceDumpAndSend(context);
+                cancelNotifications(context);
             }
         }
 
+        // Update the main UI and the QS tile.
+        context.sendBroadcast(new Intent(MainFragment.ACTION_REFRESH_TAGS));
+        QsService.requestListeningState(context);
     }
 
-    private static void postRootNotification(Context context, SharedPreferences prefs) {
-        NotificationManager nm = context.getSystemService(NotificationManager.class);
+    /*
+     * Updates the current Quickswitch tile state based on the current state of
+     * preferences.
+     * Note that the Quickswitch tile should also be unavailable if
+     * DEVELOPMENT_SETTINGS_ENABLED is false, since System Tracing is only
+     * available inside Developer Options.
+     */
+    public static void updateQuickswitch(Context context) {
+        boolean quickswitchPreferenceEnabled =
+            PreferenceManager.getDefaultSharedPreferences(context)
+              .getBoolean(context.getString(R.string.pref_key_quick_setting), false);
+
+        boolean quickswitchAllowed = (1 ==
+            Settings.Secure.getInt(context.getContentResolver(),
+                Settings.Global.DEVELOPMENT_SETTINGS_ENABLED , 0));
+
+        ComponentName name = new ComponentName(context, QsService.class);
+        context.getPackageManager().setComponentEnabledSetting(name,
+            quickswitchPreferenceEnabled && quickswitchAllowed
+                ? PackageManager.COMPONENT_ENABLED_STATE_ENABLED
+                : PackageManager.COMPONENT_ENABLED_STATE_DISABLED,
+            PackageManager.DONT_KILL_APP);
+
+        QsService.requestListeningState(context);
+    }
+
+    private static void setupDeveloperOptionsWatcher(Context context) {
+        Uri settingUri = Settings.Global.getUriFor(
+            Settings.Global.DEVELOPMENT_SETTINGS_ENABLED);
+
+        context.getContentResolver().registerContentObserver(settingUri, false,
+            new ContentObserver(new Handler()) {
+                @Override
+                public void onChange(boolean selfChange) {
+                    super.onChange(selfChange);
+                    updateQuickswitch(context);
+                }
+
+                @Override
+                public boolean deliverSelfNotifications() {
+                    return true;
+                }
+            });
+    }
+
+    private static void postTracingNotification(Context context, SharedPreferences prefs) {
+        Intent stopIntent = new Intent(STOP_ACTION, null, context, Receiver.class);
+
+        String title = context.getString(R.string.trace_is_being_recorded);
+        String msg = context.getString(R.string.tap_to_stop_tracing);
+
+        final Notification.Builder builder = new Notification.Builder(context)
+                .setStyle(new Notification.BigTextStyle().bigText(msg))
+                .setSmallIcon(R.drawable.stat_sys_adb)
+                .setContentTitle(title)
+                .setTicker(title)
+                .setContentText(msg)
+                .setContentIntent(PendingIntent.getBroadcast(context, 0, stopIntent, 0))
+                .setOngoing(true)
+                .setLocalOnly(true)
+                .setColor(context.getColor(
+                        com.android.internal.R.color.system_notification_accent_color));
+
+        context.getSystemService(NotificationManager.class)
+            .notify(Receiver.class.getName(), TRACE_NOTIFICATION, builder.build());
+    }
+
+    private static void postCategoryNotification(Context context, SharedPreferences prefs) {
         Intent sendIntent = new Intent(context, MainActivity.class);
 
-        String title = "Tracing permissions required.";
-        String msg = "Some tracing tags are not available: " + getActiveUnavailableTags(context, prefs)
-                + "\nThis should not happen! Please file a bug on Traceur.";
+        String title = context.getString(R.string.tracing_categories_unavailable);
+        String msg = getActiveUnavailableTags(context, prefs);
         final Notification.Builder builder = new Notification.Builder(context)
                 .setStyle(new Notification.BigTextStyle().bigText(
                         msg))
@@ -119,17 +197,21 @@ public class Receiver extends BroadcastReceiver {
                 .setDefaults(Notification.DEFAULT_VIBRATE)
                 .setColor(context.getColor(
                         com.android.internal.R.color.system_notification_accent_color));
-        nm.notify(Receiver.class.getName(), 0, builder.build());
+
+        context.getSystemService(NotificationManager.class)
+            .notify(Receiver.class.getName(), CATEGORY_NOTIFICATION, builder.build());
     }
 
-    private static void cancelRootNotification(Context context) {
-        NotificationManager nm = context.getSystemService(NotificationManager.class);
-        nm.cancel(Receiver.class.getName(), 0);
+    private static void cancelNotifications(Context context) {
+        NotificationManager notificationManager =
+            context.getSystemService(NotificationManager.class);
+        notificationManager.cancel(Receiver.class.getName(), TRACE_NOTIFICATION);
+        notificationManager.cancel(Receiver.class.getName(), CATEGORY_NOTIFICATION);
     }
 
     public static String getActiveTags(Context context, SharedPreferences prefs, boolean onlyAvailable) {
         Set<String> tags = prefs.getStringSet(context.getString(R.string.pref_key_tags),
-                ATRACE_TAGS);
+                getDefaultTagList());
         StringBuilder sb = new StringBuilder(10 * tags.size());
         TreeMap<String, String> available =
                 onlyAvailable ? AtraceUtils.atraceListCategories() : null;
@@ -148,7 +230,7 @@ public class Receiver extends BroadcastReceiver {
 
     public static String getActiveUnavailableTags(Context context, SharedPreferences prefs) {
         Set<String> tags = prefs.getStringSet(context.getString(R.string.pref_key_tags),
-                ATRACE_TAGS);
+                getDefaultTagList());
         StringBuilder sb = new StringBuilder(10 * tags.size());
         TreeMap<String, String> available = AtraceUtils.atraceListCategories();
 
@@ -162,5 +244,9 @@ public class Receiver extends BroadcastReceiver {
         String s = sb.toString();
         Log.v(TAG, "getActiveUnavailableTags() = \"" + s + "\"");
         return s;
+    }
+
+    public static Set<String> getDefaultTagList() {
+        return Build.TYPE.equals("user") ? ATRACE_TAGS_USER : ATRACE_TAGS;
     }
 }

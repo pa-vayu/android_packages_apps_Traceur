@@ -23,7 +23,6 @@ import android.graphics.drawable.Icon;
 import android.preference.PreferenceManager;
 import android.service.quicksettings.Tile;
 import android.service.quicksettings.TileService;
-import android.widget.Toast;
 
 public class QsService extends TileService {
 
@@ -54,10 +53,14 @@ public class QsService extends TileService {
     }
 
     private void update() {
-        boolean tracingOn = AtraceUtils.isTracingOn();
+        SharedPreferences prefs = PreferenceManager.getDefaultSharedPreferences(this);
+        boolean tracingOn = prefs.getBoolean(getString(R.string.pref_key_tracing_on), false);
+
+        String titleString = getString(tracingOn ? R.string.stop_tracing: R.string.record_trace);
+
         getQsTile().setIcon(Icon.createWithResource(this, R.drawable.stat_sys_adb));
         getQsTile().setState(tracingOn ? Tile.STATE_ACTIVE : Tile.STATE_INACTIVE);
-        getQsTile().setLabel(tracingOn ? "Tracing" : "Start Tracing");
+        getQsTile().setLabel(titleString);
         getQsTile().updateTile();
     }
 
@@ -65,22 +68,11 @@ public class QsService extends TileService {
      *  If tracing is being turned off, dump and offer to share. */
     @Override
     public void onClick() {
-        boolean tracingOn = AtraceUtils.isTracingOn();
         SharedPreferences prefs = PreferenceManager.getDefaultSharedPreferences(this);
+        boolean newTracingState = !prefs.getBoolean(getString(R.string.pref_key_tracing_on), false);
+        prefs.edit().putBoolean(getString(R.string.pref_key_tracing_on), newTracingState).apply();
 
-        prefs.edit().putBoolean(getString(R.string.pref_key_tracing_on), !tracingOn).apply();
-
-        if (tracingOn) {
-            Toast.makeText(getApplicationContext(), "Stopping trace...", Toast.LENGTH_SHORT).show();
-            AtraceUtils.atraceDumpAndSendInBackground(this,
-                    Receiver.getActiveTags(this, prefs, true));
-        } else {
-            Toast.makeText(getApplicationContext(), "Starting trace...", Toast.LENGTH_SHORT).show();
-        }
-
-        Receiver.updateTracing(this, true);
-        requestListeningState(this);
-        update();
+        Receiver.updateTracing(this);
     }
 
     public static void requestListeningState(Context context) {
