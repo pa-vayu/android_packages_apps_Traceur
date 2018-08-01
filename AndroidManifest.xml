@@ -56,6 +56,7 @@
               android:value="com.android.settings.category.ia.development" />
             <meta-data android:name="com.android.settings.summary" android:resource="@string/record_system_activity" />
             <meta-data android:name="com.android.settings.order" android:value="10" />
+            <meta-data android:name="com.android.settings.profile" android:value="primary_profile_only" />
         </activity>
 
         <receiver android:name=".Receiver" android:permission="android.permission.DUMP">
@@ -78,7 +79,7 @@
         </service>
 
         <provider
-            android:name="android.support.v4.content.FileProvider"
+            android:name="androidx.core.content.FileProvider"
             android:authorities="com.android.traceur.files"
             android:grantUriPermissions="true"
             android:exported="false">
